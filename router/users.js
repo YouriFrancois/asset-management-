@@ -1,7 +1,10 @@
+require("dotenv").config();
 const express = require("express");
-const users = require("../models/users");
 const router = express.Router();
 const User = require("../models/users");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+
 //==========================================================================
 // get all
 
@@ -18,16 +21,45 @@ router.get("/", async (req, res) => {
 router.get("/:id", getUser, (req, res) => {
 	res.json(res.user);
 });
+//==============================================================
+// loging
+router.post("/login", async (req, res) => {
+	try {
+		const user1 = await User.findOne({ email: req.body.email }).exec();
+		if (user1 === null) {
+			return res.status(401).send("cant find user name");
+		}
+		if (await bcrypt.compare(req.body.password, user1.password)) {
+			//=====================
+			const truser = { name: user1.name };
+			const accessToken = jwt.sign(truser, process.env.ACCESS_TOKEN);
+			res.json({ accessToken: accessToken });
+			//==================================
+		} else {
+			res.send("wrong password");
+		}
+	} catch (err) {
+		res.status(500).send("err" + err);
+	}
+});
+
 //==========================================================================
 //create one
 router.post("/", async (req, res) => {
-	const users = new User({
-		name: req.body.name,
-		email: req.body.email,
-		hardware: req.body.hardware,
-		software: req.body.software,
-	});
 	try {
+		const hashPass = await bcrypt.hash(req.body.password, 10);
+		//======================
+		const users = new User({
+			name: req.body.name,
+			email: req.body.email,
+			password: hashPass,
+			hardware: req.body.hardware,
+			software: req.body.software,
+		});
+		//console.log("pass= " + req.body.password);
+		//console.log("hashpass= " + hashPass);
+
+		//=====================
 		const newUser = await users.save();
 		res.status(201).json(newUser);
 	} catch (err) {
@@ -63,6 +95,19 @@ async function getUser(req, res, next) {
 	}
 	res.user = users;
 	next();
+}
+
+function authenticateToken(req, res, next) {
+	const authHeader = req.headers["authorization"];
+	const token = authHeader && authHeader.split("")[1];
+	if (token == null) {
+		return res.sendStatus(401);
+	}
+	jwt.verify(token, process.env.ACCESS_TOKEN, (err, user) => {
+		if (err) return res.sendStatus(403);
+		req.user = user;
+		next();
+	});
 }
 //=====================================
 
